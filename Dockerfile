@@ -1,4 +1,4 @@
-FROM node:12
+FROM node:lts-alpine
 
 ENV TARGET ""
 ENV FILE ""
@@ -15,4 +15,4 @@ COPY ./docker/entrypoint.bash .
 
 EXPOSE 8888
 
-ENTRYPOINT ["/bin/bash", "./entrypoint.bash"]
+ENTRYPOINT ["/bin/sh", "./entrypoint.bash"]
