@@ -13,7 +13,7 @@ const app_1 = require("./app");
 process.argv[1] = path.join(process.argv[1], 'openapi-cop');
 program //
     .option('-s, --file <file>', 'path to the OpenAPI definition file')
-    .option('-h, --host <host>', 'the host of the proxy server', 'localhost')
+    .option('-h, --host <host>', 'the host of the proxy server', '0.0.0.0')
     .option('-p, --port <port>', 'port number on which to run the proxy', 8888)
     .option('-t, --target <target>', 'full base path of the target API (format: http(s)://host:port/basePath)')
     .option('--default-forbid-additional-properties', 'disallow additional properties when not explicitly specified')
@@ -37,13 +37,16 @@ if (!program.target) {
     program.outputHelp();
     process.exit();
 }
-const targetPortMatch = program.target.match(/\w+:\/\/\w+:(\d{4})(\/|$)/);
-const targetPort = targetPortMatch !== null ? targetPortMatch[1] : '';
+const targetMatch = program.target.match(/\w+:\/\/([A-Za-z0-9\-._~:\/?#[\]@!$&'()*+,;=]+):(\d{4})(\/|$)/);
+const targetHost = targetMatch !== null ? targetMatch[1] : '';
+const targetPort = targetMatch !== null ? targetMatch[2] : '';
+
 if (!targetPort || isNaN(Number(targetPort))) {
     console.log('Did not provide a port number within the target URL.\n');
     program.outputHelp();
     process.exit();
 }
+
 if (program.target.indexOf('//localhost') !== -1 &&
     program.port === Number(targetPort)) {
     console.log('Cannot proxy locally to the same port!');
@@ -59,6 +62,7 @@ async function start(restart = false) {
             port: program.port,
             host: program.host,
             targetUrl: program.target,
+			targetHost: targetHost,
             apiDocFile: program.file,
             defaultForbidAdditionalProperties: program.defaultForbidAdditionalProperties,
             silent: program.silent,

@@ -19,7 +19,7 @@ const defaults = {
  * Builds a new express app instance, and attaches all necessary middleware.
  */
 async function buildApp(options) {
-    const { targetUrl, apiDocFile, defaultForbidAdditionalProperties, silent } = {
+    const { targetUrl, targetHost, apiDocFile, defaultForbidAdditionalProperties, silent } = {
         ...defaults,
         ...options,
     };
@@ -63,74 +63,81 @@ async function buildApp(options) {
         // Deduce OpenAPI operation
         const operation = oasValidator.matchOperation(oasRequest);
         validationResults.request = oasValidator.validateRequest(oasRequest, operation);
+		const reqHeaders = req.headers;
+		reqHeaders['host'] = targetHost;
         const options = {
             url: targetUrl.replace(/\/$/, '') + req.params[0],
             qs: req.query,
             method: req.method,
-            headers: req.headers,
+            headers: reqHeaders,
             gzip: true,
             resolveWithFullResponse: true,
             simple: false,
+			strictSSL: false,
         };
         // Attach unmodified request body when present
         if (typeof req.body !== 'undefined' && req.body instanceof Buffer) {
             options.body = req.body;
         }
+		
         debug(`Proxying client request [${oasRequest.method} ${oasRequest.path}]`);
         // Send request and handle response of the target server
         rp(options)
             .then((serverResponse) => {
-            debug(`Received server response with status code ${serverResponse.statusCode}`);
-            const statusCode = serverResponse.statusCode || 500;
-            const parsedResponseBody = util_1.parseResponseBody(serverResponse);
-            validationResults.response = oasValidator.validateResponse(parsedResponseBody, operation, statusCode);
-            validationResults.responseHeaders = oasValidator.validateResponseHeaders(serverResponse.headers, operation, statusCode);
-            util_1.copyHeaders(serverResponse, res);
-            util_1.setValidationHeader(res, validationResults);
-            debug(`Validation results [${oasRequest.method} ${oasRequest.path}] ` +
-                JSON.stringify(validationResults, null, 2));
-            if (silent || !validation_1.hasErrors(validationResults)) {
-                // when in silent mode, or when validation succeeded, forward the
-                // unmodified server response
-                res.status(statusCode).send(serverResponse.body);
-            }
-            else {
-                // when not silent, render validation results on error
-                res.status(500).json({
-                    error: {
-                        message: 'openapi-cop Proxy validation failed',
-                        request: oasRequest,
-                        response: serverResponse,
-                        validationResults,
-                    },
-                });
-            }
-        })
-            .catch((err) => {
-            if (err.error && err.error.errno === 'ECONNREFUSED') {
-                debug('Target server is unreachable');
-            }
-            if (err.response) {
-                util_1.copyHeaders(err.response, res);
-            }
-            util_1.setValidationHeader(res, validationResults);
-            debug(`Validation results [${oasRequest.method} ${oasRequest.path}] ` +
-                JSON.stringify(validationResults, null, 2));
-            if (silent || !validation_1.hasErrors(validationResults)) {
-                res.status(err.statusCode || 500).send(err.response);
-            }
-            else {
-                // when not silent, render validation results on error
-                res.status(500).json({
-                    error: {
-                        message: 'openapi-cop Proxy validation failed',
-                        request: oasRequest,
-                        response: err.response,
-                        validationResults,
-                    },
-                });
-            }
-        });
+				debug(`Received server response with status code ${serverResponse.statusCode}`);
+				const statusCode = serverResponse.statusCode || 500;
+				const parsedResponseBody = util_1.parseResponseBody(serverResponse);
+				validationResults.response = oasValidator.validateResponse(parsedResponseBody, operation, statusCode);
+				validationResults.responseHeaders = oasValidator.validateResponseHeaders(serverResponse.headers, operation, statusCode);
+				delete serverResponse.headers['transfer-encoding'];
+				delete serverResponse.headers['content-encoding'];
+				util_1.copyHeaders(serverResponse, res);
+				util_1.setValidationHeader(res, validationResults);
+				debug(`Validation results [${oasRequest.method} ${oasRequest.path}] ` +
+					JSON.stringify(validationResults, null, 2));
+				if (silent || !validation_1.hasErrors(validationResults)) {
+					// when in silent mode, or when validation succeeded, forward the
+					// unmodified server response
+					res.status(statusCode).send(serverResponse.body);
+				}
+				else {
+					// when not silent, render validation results on error
+					res.status(500).json({
+						error: {
+							message: 'openapi-cop Proxy validation failed',
+							request: oasRequest,
+							response: serverResponse,
+							validationResults,
+						},
+					});
+				}
+			})
+			.catch((err) => {
+				console.log(err);
+				if (err.error && err.error.errno === 'ECONNREFUSED') {
+					debug('Target server is unreachable');
+				}
+				if (err.response) {
+					util_1.copyHeaders(err.response, res);
+				}
+				util_1.setValidationHeader(res, validationResults);
+				debug(`Validation results [${oasRequest.method} ${oasRequest.path}] ` +
+					JSON.stringify(validationResults, null, 2));
+				if (silent || !validation_1.hasErrors(validationResults)) {
+					res.status(err.statusCode || 500).send(err.response);
+				}
+				else {
+					// when not silent, render validation results on error
+					res.status(500).json({
+						error: {
+							message: 'openapi-cop Proxy validation failed',
+							request: oasRequest,
+							response: err.response,
+							validationResults,
+						},
+					});
+				}
+			});
     });
     // Global error handler
     app.use((err, _req, res, _next) => {
@@ -153,10 +160,11 @@ exports.buildApp = buildApp;
  * @param silent Do not respond with 500 status when validation fails, but leave
  * the server response untouched
  */
-async function runProxy({ port, host, targetUrl, apiDocFile, defaultForbidAdditionalProperties = false, silent = false, }) {
+async function runProxy({ port, host, targetUrl, targetHost, apiDocFile, defaultForbidAdditionalProperties = false, silent = false, }) {
     try {
         const app = await buildApp({
             targetUrl,
+			targetHost,
             apiDocFile,
             defaultForbidAdditionalProperties,
             silent,

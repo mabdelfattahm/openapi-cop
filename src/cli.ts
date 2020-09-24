@@ -2,7 +2,7 @@
 const debugMod = require('debug');
 const debug = debugMod('openapi-cop:proxy');
 debug.log = console.log.bind(console); // output to stdout
-import chalk = require('chalk');
+import * as chalk from 'chalk';
 import * as chokidar from 'chokidar';
 import * as program from 'commander';
 import * as http from 'http';
@@ -15,7 +15,7 @@ process.argv[1] = path.join(process.argv[1], 'openapi-cop');
 
 program //
   .option('-s, --file <file>', 'path to the OpenAPI definition file')
-  .option('-h, --host <host>', 'the host of the proxy server', 'localhost')
+  .option('-h, --host <host>', 'the host of the proxy server', '0.0.0.0')
   .option('-p, --port <port>', 'port number on which to run the proxy', 8888)
   .option(
     '-t, --target <target>',
@@ -56,16 +56,18 @@ if (!program.target) {
   process.exit();
 }
 
-const targetPortMatch = (program.target as string).match(
-  /\w+:\/\/\w+:(\d{4})(\/|$)/,
+const targetMatch = (program.target as string).match(
+  /\w+:\/\/([A-Za-z0-9\-._~:\/?#[\]@!$&'()*+,;=]+):(\d{4})(\/|$)/,
 );
-const targetPort: string = targetPortMatch !== null ? targetPortMatch[1] : '';
+const targetPort: string = targetMatch !== null ? targetMatch[2] : '';
+const targetHost: string = targetMatch !== null ? targetMatch[1] : '';
 
 if (!targetPort || isNaN(Number(targetPort))) {
   console.log('Did not provide a port number within the target URL.\n');
   program.outputHelp();
   process.exit();
 }
+
 if (
   program.target.indexOf('//localhost') !== -1 &&
   program.port === Number(targetPort)
@@ -84,9 +86,9 @@ async function start(restart = false): Promise<void> {
       port: program.port,
       host: program.host,
       targetUrl: program.target,
+      targetHost: targetHost,
       apiDocFile: program.file,
-      defaultForbidAdditionalProperties:
-        program.defaultForbidAdditionalProperties,
+      defaultForbidAdditionalProperties: program.defaultForbidAdditionalProperties,
       silent: program.silent,
     });
   } catch (e) {

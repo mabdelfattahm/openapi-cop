@@ -155,7 +155,8 @@ export function parseResponseBody(
 ): any {
   const contentTypeString = res.headers['content-type'];
   if (!contentTypeString) {
-    throw new Error('Received response with an empty Content-Type header.');
+    // throw new Error('Received response with an empty Content-Type header.');
+    return res.body.toString();
   }
   const contentType = ct.parse(contentTypeString);
 

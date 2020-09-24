@@ -40,6 +40,7 @@ interface ProxyOptions {
   port: number;
   host: string;
   targetUrl: string;
+  targetHost: string;
   apiDocFile: string;
   defaultForbidAdditionalProperties?: boolean;
   silent?: boolean;
@@ -51,7 +52,7 @@ interface ProxyOptions {
 export async function buildApp(
   options: BuildOptions,
 ): Promise<express.Application> {
-  const { targetUrl, apiDocFile, defaultForbidAdditionalProperties, silent } = {
+  const { targetUrl, targetHost, apiDocFile, defaultForbidAdditionalProperties, silent } = {
     ...defaults,
     ...options,
   };
@@ -125,12 +126,15 @@ export async function buildApp(
       oasRequest,
       operation,
     );
-
+    
+    const reqHeaders = req.headers;
+    reqHeaders['host'] = targetHost;
+    
     const options: rp.Options = {
       url: targetUrl.replace(/\/$/, '') + req.params[0],
       qs: req.query,
       method: req.method,
-      headers: req.headers,
+      headers: reqHeaders,
       gzip: true,
       resolveWithFullResponse: true,
       simple: false,
@@ -164,6 +168,9 @@ export async function buildApp(
           operation as Operation,
           statusCode,
         );
+
+        delete serverResponse.headers['transfer-encoding'];
+				delete serverResponse.headers['content-encoding'];
 
         copyHeaders(serverResponse, res);
         setValidationHeader(res, validationResults);
@@ -243,6 +250,7 @@ export async function runProxy({
   port,
   host,
   targetUrl,
+  targetHost,
   apiDocFile,
   defaultForbidAdditionalProperties = false,
   silent = false,
@@ -250,6 +258,7 @@ export async function runProxy({
   try {
     const app = await buildApp({
       targetUrl,
+      targetHost,
       apiDocFile,
       defaultForbidAdditionalProperties,
       silent,
